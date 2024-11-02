@@ -362,8 +362,8 @@ String getStreamPageJS() {
             }
         }
 
-        document.getElementById('SVGA').classList.add('active');
-        document.getElementById('rot0').classList.add('active');
+        document.getElementById('HD').classList.add('active');
+        document.getElementById('rot90').classList.add('active');
         startUpdateInterval();
 
         document.addEventListener('visibilitychange', function() {
