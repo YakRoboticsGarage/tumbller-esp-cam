@@ -2,6 +2,7 @@
 #include "esp_timer.h"
 #include "WiFi.h"
 #include "WebServer.h"
+#include "driver/gpio.h"
 
 // WiFi credentials
 const char* ssid = "WIFISSID";
@@ -36,6 +37,55 @@ const unsigned long captureInterval = 100; // Minimum time between captures in m
 // Global variables to track current settings
 framesize_t currentFrameSize = FRAMESIZE_HD;
 int currentRotation = 90;
+
+// LED Pin Definitions
+#define RED_LED GPIO_NUM_21    // Red LED on GPIO 21
+#define WHITE_LED GPIO_NUM_22  // White LED on GPIO 22
+
+// Global variables for LED control
+unsigned long previousRedBlink = 0;
+unsigned long previousWhiteBlink = 0;
+const long redBlinkInterval = 500;    // Blink interval for red LED (500ms)
+const long whiteBlinkInterval = 1000;  // Blink interval for white LED (1 second)
+bool redLedState = false;
+bool whiteLedState = false;
+
+void setupLEDs() {
+    // Configure GPIO pins for LED output
+    gpio_config_t io_conf = {};
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    
+    // Set bit mask for the LEDs
+    io_conf.pin_bit_mask = (1ULL << RED_LED) | (1ULL << WHITE_LED);
+    
+    // Configure GPIO with the given settings
+    gpio_config(&io_conf);
+
+    // Initialize LEDs to OFF state
+    gpio_set_level(RED_LED, 0);
+    gpio_set_level(WHITE_LED, 0);
+}
+
+void blinkRedLED() {
+    unsigned long currentMillis = millis();
+    if (currentMillis - previousRedBlink >= redBlinkInterval) {
+        previousRedBlink = currentMillis;
+        redLedState = !redLedState;
+        gpio_set_level(RED_LED, redLedState);
+    }
+}
+
+void blinkWhiteLED() {
+    unsigned long currentMillis = millis();
+    if (currentMillis - previousWhiteBlink >= whiteBlinkInterval) {
+        previousWhiteBlink = currentMillis;
+        whiteLedState = !whiteLedState;
+        gpio_set_level(WHITE_LED, whiteLedState);
+    }
+}
 
 // Function to initialize camera
 bool initCamera() {
@@ -332,6 +382,9 @@ void setup() {
     Serial.begin(115200);
     Serial.println("Starting setup...");
 
+    // Initialize LEDs
+    setupLEDs();
+
     // Create semaphore before initializing camera
     cameraSemaphore = xSemaphoreCreateMutex();
     if (!cameraSemaphore) {
@@ -363,8 +416,15 @@ void setup() {
     WiFi.begin(ssid, password);
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
+        blinkRedLED();  // Blink red LED while connecting
+        delay(10);  // Short delay to prevent watchdog trigger
         Serial.print(".");
     }
+
+    // Turn off red LED once connected
+    gpio_set_level(RED_LED, 0);
+    redLedState = false;
+
     Serial.println("");
     Serial.println("WiFi connected");
     Serial.print("Camera Ready! Use 'http://");
@@ -458,12 +518,22 @@ void setup() {
 
 void loop() {
     server.handleClient();
+
+    // Blink white LED
+    blinkWhiteLED();
+
     // Add a small delay to prevent watchdog triggers
     delay(1);
 }
 
 // Helper function for clean shutdown if needed
 void cleanShutdown() {
+    // Turn off both LEDs
+    gpio_set_level(RED_LED, 0);
+    gpio_set_level(WHITE_LED, 0);
+    redLedState = false;
+    whiteLedState = false;
+
     if (cameraSemaphore) {
         vSemaphoreDelete(cameraSemaphore);
         cameraSemaphore = NULL;
